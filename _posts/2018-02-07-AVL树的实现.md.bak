@@ -1,16 +1,16 @@
----
+ï»¿---
 layout:     post
-title:      AVLÊ÷µÄÊµÏÖ
-subtitle:   Mr.Alien Blog  AVLÊ÷µÄÒ»ÖÖC++ÊµÏÖ
+title:      AVLæ ‘çš„å®ç°
+subtitle:   Mr.Alien Blog  AVLæ ‘çš„ä¸€ç§C++å®ç°
 date:       2018-02-07
 author:     BY
 header-img: img/post-bg-universe.jpg
 catalog: true
 tags:
-    - Êı¾İ½á¹¹
+    - æ•°æ®ç»“æ„
 ---
 
-## AVLÊ÷µÄÊµÏÖ
+## AVLæ ‘çš„å®ç°
 
 ```
 #pragma once
@@ -83,7 +83,7 @@ template<typename Comparable>
 AvlTree<Comparable>::AvlTree() : root(nullptr){}
 
 
-//ÓÃÓÚ¿½±´
+//ç”¨äºæ‹·è´
 template<typename Comparable>
 typename AvlTree<Comparable>::AvlNode* AvlTree<Comparable>::clone(AvlNode* t) const
 {
@@ -92,14 +92,14 @@ typename AvlTree<Comparable>::AvlNode* AvlTree<Comparable>::clone(AvlNode* t) co
 	return new AvlNode(t->ele, clone(t->left), clone(t->right), t->height);
 }
 
-//¿½±´¹¹Ôìº¯Êı
+//æ‹·è´æ„é€ å‡½æ•°
 template<typename Comparable>
 AvlTree<Comparable>::AvlTree(const AvlTree& rhs)
 {
 	root = clone(rhs.root);
 }
 
-//¿½±´¸³ÖµÔËËã·û
+//æ‹·è´èµ‹å€¼è¿ç®—ç¬¦
 template<typename Comparable>
 typename AvlTree<Comparable>& AvlTree<Comparable>::operator=(const AvlTree& rhs)
 {
@@ -111,14 +111,14 @@ typename AvlTree<Comparable>& AvlTree<Comparable>::operator=(const AvlTree& rhs)
 	return *this;
 }
 
-//ÒÆ¶¯¹¹Ôìº¯Êı
+//ç§»åŠ¨æ„é€ å‡½æ•°
 template<typename Comparable>
 AvlTree<Comparable>::AvlTree(AvlTree&& rhs) : root(rhs.root)
 {
 	rhs.root = nullptr;
 }
 
-//ÒÆ¶¯¸³ÖµÔËËã·û
+//ç§»åŠ¨èµ‹å€¼è¿ç®—ç¬¦
 template<typename Comparable>
 typename AvlTree<Comparable>& AvlTree<Comparable>::operator=(AvlTree&& rhs)
 {
@@ -132,13 +132,13 @@ AvlTree<Comparable>::~AvlTree()
 	makeEmpty(root);
 }
 
-//°üº¬
+//åŒ…å«
 template<typename Comparable>
 bool AvlTree<Comparable>::contains(const Comparable& x)
 {
 	return contains(x, root);
 }
-//°üº¬
+//åŒ…å«
 template<typename Comparable>
 bool AvlTree<Comparable>::contains(const Comparable& x, AvlNode* t)
 {
@@ -223,7 +223,7 @@ void AvlTree<Comparable>::removeMin(AvlNode*& t)
 		parent = min;
 		min = min->left;
 	}
-	//½»»»Öµ
+	//äº¤æ¢å€¼
 	t->ele = min->ele;
 	if (parent->left == min)
 	{
@@ -241,7 +241,7 @@ void AvlTree<Comparable>::removeMin(AvlNode*& t)
 template<typename Comparable>
 void AvlTree<Comparable>::remove(const Comparable& x, AvlNode*& t)
 {
-	//¿Õ½Úµã£¬É¶¶¼²»×ö£¨Ã»ÕÒµ½£©
+	//ç©ºèŠ‚ç‚¹ï¼Œå•¥éƒ½ä¸åšï¼ˆæ²¡æ‰¾åˆ°ï¼‰
 	if (t == nullptr)
 		return;
 	if (x < t->ele)
@@ -268,7 +268,7 @@ void AvlTree<Comparable>::rotateWithLeftChild(AvlNode*& t)
 	AvlNode* k = t->left;
 	t->left = k->right;
 	k->right = t;
-	//¸Ä±ä¸ß¶È
+	//æ”¹å˜é«˜åº¦
 	t->height = std::max(height(t->left),height(t->right))+1;
 	k->height = std::max(height(k->left),t->height) + 1;
 	t = k;
@@ -281,14 +281,14 @@ void AvlTree<Comparable>::rotateWithRightChild(AvlNode*& t)
 	AvlNode* k = t->right;
 	t->right = k->left;
 	k->left = t;
-	//¸Ä±ä¸ß¶È;
+	//æ”¹å˜é«˜åº¦;
 	t->height = std::max(height(t->left), height(t->right)) + 1;
 	k->height = std::max(height(k->left), t->height) + 1;
 	t = k;
 }
 
 
-//¼ÆËãÆ½ºâÒò×Ó
+//è®¡ç®—å¹³è¡¡å› å­
 template<typename Comparable>
 int AvlTree<Comparable>::balance_factor(AvlNode*& t)
 {
@@ -297,11 +297,11 @@ int AvlTree<Comparable>::balance_factor(AvlNode*& t)
 	return height(t->left) - height(t->right);
 }
 
-//Æ½ºâ²Ù×÷
+//å¹³è¡¡æ“ä½œ
 template<typename Comparable>
 void AvlTree<Comparable>::balance(AvlNode*& t)
 {
-	//ËÄÖÖĞı×ª
+	//å››ç§æ—‹è½¬
 	if (balance_factor(t) == 2)
 	{
 		if (balance_factor(t->left) < 0)
