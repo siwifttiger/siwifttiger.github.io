@@ -1,3 +1,9 @@
+>这篇博客搭建教程来自[BY的博客](https://www.jianshu.com/p/e68fba58f75c)
+>非常感谢这位仁兄如此翔实，高质量的教程，特意在README的开头处表达谢意，以下内容皆为[BY](http://qiubaiying.top/)的原创
+>仓库中部分内容为了适应本人的风格，有了不少变动
+>大家如果认为这篇博客对你产生了帮助，不妨对他的这个[项目](https://github.com/qiubaiying/qiubaiying.github.io)star一下以表支持
+
+
 # BY Blog
 
 > 下面是博客的搭建教程，这个教程修改自 [Hux](https://github.com/Huxpro/huxpro.github.io) 。
