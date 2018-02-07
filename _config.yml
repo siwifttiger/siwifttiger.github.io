@@ -19,7 +19,7 @@ sidebar-avatar: /img/about-BY-gentle.jpg      # use absolute URL, seeing it's us
 # SNS settings
 RSS: false
 # weibo_username:     qiubaiying
-zhihu_username:     魂散淡
+zhihu_username:      hun-san-dan-30
 github_username:    siwifttiger
 #facebook_username:  baiying.qiu.7
 #jianshu_username:   e71990ada2fd
@@ -63,7 +63,7 @@ kramdown:
 gitalk:
   enable: true    #是否开启Gitalk评论
   clientID: 0e161d546379545a7f21   #生成的clientID
-  clientSecret: 00715071568779f8804be5a45098f80cce4e7cc1  #同上
+  clientSecret: 00715071568779f8804be5a45098f80cce4e7cc1 #同上
   repo: siwifttiger.github.io    #仓库名称
   owner: siwifttiger   #github用户名
   admin: siwifttiger
