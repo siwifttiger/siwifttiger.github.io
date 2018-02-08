@@ -62,8 +62,8 @@ kramdown:
 # Gitalk
 gitalk:
   enable: true    #是否开启Gitalk评论
-  clientID: 0e161d546379545a7f21   #生成的clientID
-  clientSecret: 00715071568779f8804be5a45098f80cce4e7cc1 #同上
+  clientID: 7db2fc58c01b148d92f9   #生成的clientID
+  clientSecret: e037207d9a0938e94fe9a25c190a2767e4c9b2ec #同上
   repo: siwifttiger.github.io    #仓库名称
   owner: siwifttiger   #github用户名
   admin: siwifttiger
