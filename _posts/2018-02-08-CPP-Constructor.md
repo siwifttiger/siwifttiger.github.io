@@ -11,7 +11,7 @@ tags:
 ---
 
 
-#C++ 默认构造函数
+# C++ 默认构造函数
 　　对于C++的默认构造函数，以前一直有这样两个误解。其一，当一个类没有显示定义的默认构造函数时，编译器会自动合成一个默认构造函数；其二，编译器合成的默认构造函数会自动初始化类中的成员变量。这两个理解都是错的。
 	　　那么到底哪些情况下编译器会自动为类合成默认构造函数呢？
 >default constructors……在**需要**的时候被编译器产生出来
@@ -38,7 +38,7 @@ tags:
 
 　　具体哪些情况下会合成这种 trivial constructor 不在本文讨论范围之内，读者只需简单记住这种构造函数不会做任何事情，即不会为你初始化成员变量（*但是g++编译器好像做过优化，在没有显示声明任何构造函数的情况下，声明一个对象实例也会初始化它的成员变量。这一点我没有仔细验证过，所以我也不确定，如果有知道的读者还望告知*）。我们接下来会介绍哪些情况下编译器会合成non trivial constructor。
 
-##**1.带有Default Constructor的 Member Class Object**
+## **1.带有Default Constructor的 Member Class Object**
 ``` c++
 class Foo{
 public:
@@ -139,8 +139,8 @@ Snow_White::Snow_White():sneezy(1024)
 ```
 
 
-##**2."带有Default Constructor" 的 Base Class** \
-###一、子类中不含有任何constructor
+## **2."带有Default Constructor" 的 Base Class** \
+### 一、子类中不含有任何constructor
 　　类似的道理，如果一个没有任何 constructor 的 class 派生自一个"带有default constructor" 的 base class，那么这个 derived class 的 default constructor 会被视为 nontrivial，并因此会被编译器合成出来。
 1.如果子类派生自多个父类
 ```
@@ -251,7 +251,7 @@ Mix::Mix{
 
 ![image](C:\Users\Administrator\Pictures\order.PNG)
 
-###二、子类含有显式的construtor（**没有强调是否为default constructor**）
+### 二、子类含有显式的construtor（**没有强调是否为default constructor**）
 如果子类中已经存在显示定义的constructors(不管其中有没有default constructor)，编译器会扩充每一个constructor来完成它的责任，**但是编译器不会合成新的default constructor，这也就是说，在这种情况下如果你需要default constructor，程序员得自己明确地声明定义出来**。我们延续上一个例子
 ```
 class Member{
@@ -387,7 +387,7 @@ vptr 和 固定索引 1 就是编译器完成的工作，*&widget* 代表要交�
 
 同理，如果类中已有constructors，那么编译器会扩充这些constructors来完成上述对 vbtl 和 vptr 的工作。
 
-##**4."带有一个Virtual Base Class" 的 Class** (虚继承)
+## **4."带有一个Virtual Base Class" 的 Class** (虚继承)
 
 Virtual base class 的实现法在不同的编译器之间有极大的差异。然而，每一中是实现法都有一个共同点
 
@@ -423,7 +423,7 @@ void foo(const A* pa){
 
 指针_vbcX(各个编译器实现各不相同，不一定是这样的一个指针，但是编译器一定会合成些什么东西) 是在 class object 构造期间被完成的。如果 class 中有定义好的constructor，编译器会扩充每一个 constructor，安插那些 "允许每一个virtual base class 执行期存取操作" 的代码。 如果 class 没有定义任何constructor ， 编译器会为它合成一个 default constructor，所做的事情相同。
 
-##**5.总结**
+## **5.总结**
 
 在上述4种情况下，编译器会为没有声明任何constructor 的class 合成 nontrivial default constructor。这种 default constructor 只会满足编译器的需求，除此之外的任何工作都不应该被这样的default constructor完成。如果程序需要另外的初始化操作，例如把一个指针赋值为0，这个工作应该由程序员自己完成。要消除开篇介绍的两个误解：
 
@@ -433,6 +433,6 @@ void foo(const A* pa){
 
 没有一个是真的。
 
-##**6.参考文献**
+## **6.参考文献**
 
 [《深入探索C++对象模型》](https://book.douban.com/subject/1091086/)
