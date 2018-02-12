@@ -283,9 +283,8 @@ int main()
 
 ```
 
-### ROT13 客户端
+### 简单的ROT13 客户端(译者加)
 ```
-
 /*************************************************************************
 	> File Name: rot13_client.c
 	> Author: 
@@ -301,11 +300,57 @@ int main()
 #include <string.h>
 #include <stdlib.h>
 
+ssize_t sendn(int fd, void* buf, ssize_t len)
+{   ssize_t remaining = len;
+    ssize_t recv = len;
+    char* bufp = (char*)buf;
+    while(remaining)
+    {
+        recv = send(fd,(char*)bufp,remaining,0);
+        if(recv == 0)
+        {
+            continue;
+        }
+        else if(recv < 0)
+        {
+            perror("send");
+            return -1;
+        }
+        remaining -= recv;
+        bufp += recv;
+    }
+    return len;
+}
+
+ssize_t readn(int fd, void* buf, ssize_t len)
+{
+    ssize_t nleft = len;
+    ssize_t nread;
+    char *bufp = (char*)buf;
+    while(nleft)
+    {
+        if((nread = recv(fd,bufp,nleft,0)) < 0)
+        {
+            perror("recv");
+            return -1;
+        }
+        else if(nread == 0)
+        {
+            return len - nleft;
+        }
+        nleft -= nread;
+        bufp += nread;
+
+    }
+    return len;
+}
+
 
 int main()
 {
     int fd;
-    char c;
+    char buf[1024] = {0};
+    char recvbuf[1024] = {0};
     struct sockaddr_in sin;
     ssize_t n_written, remaining;
 
@@ -319,6 +364,96 @@ int main()
     sin.sin_family = AF_INET;
     sin.sin_port = htons(40713);
     sin.sin_addr.s_addr = inet_addr("127.0.0.1");
+   
+    if(connect(fd,(struct sockaddr *)&sin,sizeof(sin)) < 0)
+    {
+        perror("connect");
+        close(fd);
+        return 1;
+    }
+
+    while(fgets(buf,sizeof(buf),stdin) != NULL)
+    {
+        remaining = strlen(buf);
+        n_written = sendn(fd,buf,remaining);
+        if(n_written < 0)
+        {
+            perror("send");
+            return 1;
+        }
+        if((readn(fd,recvbuf,remaining)) < 0)
+        {
+            perror("recv");
+            return 1;
+        }
+        fwrite(recvbuf,1,remaining,stdout);
+        memset(buf,0,sizeof(buf));
+        memset(recvbuf,0,sizeof(recvbuf));
+    }
     
 }
+
+    
+```
+
+到此为止，对于一次性处理多个连接的问题，我们有了完美的解决方案了吗？我们可以停止写这本书去干其它的事了吗？显然不是，首先，进程的创建(哪怕是线程的创建)开销在一些平台上可能都十分昂贵，在实际应用中，你可能会使用一个线程池而非创建新的进程。但是更重要的是，线程的规模不能如你所愿的扩张。当你的程序需要同时处理成千上万个连接的时候，处理成千上万个线程的效率肯定不必每个CPU只处理几个线程。  
+如果多线程都处理不了多连接的话，那怎么办呢？在Unix环境中，你可以设置的你的socket为noblocking(非阻塞)，Unix系统调用如下  
+> fcntl(fd,F_SETFL,O_NONBLOCK);
+
+其中fd是socket的文件描述符，一旦你设置了fd是noblocking的，那么以后无论何时，当你的网络调用(译者加：例如send这种函数)作用在这个fd上时，函数要么立刻完成操作返回，要么返回一个特殊的错误码(error code)来表明"我现在无法取得任何进展，请再试一次"。所以我们可能会很天真地将上面处理两个socket连接的例子改写成下面这样：
+### 糟糕的例子：忙轮询所有的socket套接字
+```
+/*This will work, but the performance will be unforgivably bad*/
+int i, n;
+char buf[1024];
+for (i = 0; i < n_sockets, ++i)
+    fcntl(fd[i],F_SETFL,O_NONBLOCK);
+
+while(i_still_want_to_read())
+{
+    for(i = 0; i < n_sockets; ++i)
+    {
+        n = recv(fd[i],buf,sizeof(buf),0);
+        if(n == 0)
+        {
+            handle_close(fd[i]);
+        }
+        else if(n < 0)
+        {
+            if(errno = EAGAIN) 
+                ;                    //The kernel didn't have any data for us to read.
+            else
+                handle_error(fd[i],errno);
+        }
+        else
+        {
+            handle_input(fd[i],buf,n);
+        }
+}
+```
+
+现在我们使用非阻塞socket处理多连接的问题，上面的程序会起作用，但是效果微乎其微。性能会非常的差，原因有两点，第一：当任何一个连接上都没有数据的时候，该循环将不会停止，直至消耗完你的CPU时间。第二，当你使用这种方法处理一两个以上的连接的时候，你需要为每个连接都调用内核(译者加：recv)，不管这个连接上有没有数据。所以我们需要一种方法去告诉内核“必须等到其中一个socket准备好数据给我了才通知我，而且告诉我是哪个socket”，最早的解决办法包括现在也在使用的方法就是select()。select()调用需要三组fd集合(用bit数组实现):一个用来读，一个用来写，一个用来处理异常。该函数会一直等待直到某个集合中的socket准备就绪，然后修改包含这些可用socket的集合(告知我们可用)。  
+下面依然是上面那个例子，不过这次我们使用select  
+```
+/*If you only have a couple dozen fds, this version */
+fd_set readset;
+int i, n;
+char buf[1024];
+
+while(i_still_want_to_read())
+{
+    int maxfd = -1;
+    FD_ZERO(&readset);
+
+    /*Add all of the interesting fds to readset*/
+    for(i = 0; i < n_sockets; ++i)
+    {
+        if(fd[i] > maxfd) maxfd = fd[i];
+        FD_SET(fd[i],&readset);
+    }
+
+}
+
+
+
 ```
