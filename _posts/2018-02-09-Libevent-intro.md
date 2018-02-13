@@ -660,8 +660,33 @@ run(void)
         perror("listen");
         return;
     }
+    
+    FD_ZERO(&readset);
+    FD_ZERO(&writeset);
+    FD_ZERO(&exset);
 
+    FD_SET(listener,&readset);
 
+    for(i = 0; i < FD_SETSIZE; ++i)
+    {
+        if(state[i])
+        {
+            if(i > maxfd)
+            {
+                maxfd = i;
+            }
+            FD_SET(i,&readset);
+            if(state[i]->writing)
+            {
+                FD_SET(i,&writeset);
+            }
+        }
+    }
+
+    if(select(maxfd+1,&readset,&writeset,&exset,NULL) < 0)
+    {
+        perror("select");
+        return;
+    }
 }
-
 ```
