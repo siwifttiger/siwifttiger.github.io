@@ -739,3 +739,406 @@ int main()
     return 0;
 }
 ```
+
+但是这不算完, 因为生成和读取select()的二进制位花费的时间，与你需要提供给select的最大fd成正比。当sockets的数量非常大的时候，select的调用花费将会增加的非常恐怖。  
+不同的操作系统提供了不同的函数替代select的功能。其中包含了poll(),epoll(),kqueue(),evports,和/dev/poll。所有这些给出的函数都比select()性能更好。除了poll()之外，所有的函数对于增加一个socket，删除一个socket，通知一个socket已经准备好IO的时间花费都是O(1).
+遗憾的是，这些高效的接口并没有一个统一的标准。Linux有epoll，BSD系列(包括Darwin)有kqueue，Solaris有evports和/dev/poll...这些操作系统并不包含其他操作系统提供的接口。所以如果你想写一个可移植的高性能异步应用，你需要一个抽象的方法将所有这些接口封装好，并且提供其中最高效的一个。
+这些就是Libevent API最底层的工作。它为多样的selec()替代方案提供了一个统一的接口，并且在运行它的电脑上使用了可用的最高效的版本。
+下面给出另一个版本的异步ROT13服务器。这次，它使用Libevent 2 替代select()函数。注意，现在fd_sets已经消失了：我们使用一个结构体event_base来关联和分离事件，这可能由select(),poll(),epoll(),kqueue()等系列函数实现的。
+
+### 例子：一个用Libevent实现的低级的ROT13服务器
+
+```C
+//for sockaddr_in
+#include <netinet/in.h>
+
+/*for socket functions*/
+#include <sys/socket.h>
+/*for fcntl*/
+#include <event2/event.h>
+
+#include <assert.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+
+#define MAX_LINE  16384
+
+void do_read(evutil_socket_t fd, short events, void *arg);
+void do_write(evutil_socket_t fd, short events, void *arg);
+
+
+char rot13_char(char c)
+{
+    if((c >= 'a' && c <= 'm') || (c >= 'A' && c <= 'M'))
+        return c + 13;
+    else if ((c >= 'n' && c <= 'z') || (c >= 'N' && c <= 'Z'))
+        return c - 13;
+    else    
+        return c;
+}
+
+struct fd_state
+{
+    char buffer[MAX_LINE + 1];
+    size_t buffer_used;       
+
+    size_t n_written;           
+    size_t write_upto;
+
+    struct event *read_event;
+    struct event *write_event;
+};
+
+struct fd_state*
+alloc_fd_state(struct  event_base *base, evutil_socket_t fd)
+{
+    struct fd_state *state = malloc(sizeof(struct fd_state));
+    if(!state)
+    {
+        return NULL;
+    }
+    state->read_event = event_new(base,fd,EV_READ|EV_PERSIST,do_read,state);
+    if(!state->read_event)
+    {
+
+        free(state);
+        return NULL;
+    }
+    state->write_event = event_new(base,fd,EV_WRITE|EV_PERSIST,do_write,state);
+    if(!state->write_event)
+    {
+        event_free(state->read_event);
+        free(state);
+        return NULL;
+    }
+    state->buffer_used = state->n_written = state->write_upto = 0;
+
+    assert(state->write_event);
+    return state;
+}
+
+void
+free_fd_state(struct fd_state *state)
+{
+    event_free(state->read_event);
+    event_free(state->write_event);
+    free(state);
+}
+
+void
+do_read(evutil_socket_t fd, short events, void *arg)
+{
+    struct fd_state *state = arg;
+    char buf[1024];
+    int i;
+    ssize_t result;
+    while(1)
+    {
+        assert(state->write_event);
+        result = recv(fd,buf,sizeof(buf),0);
+        if(result < 0)
+        {
+            break;
+        }
+
+        for(i = 0; i < result; ++i)
+        {
+            if(state->buffer_used < sizeof(state->buffer))
+            {
+                state->buffer[state->buffer_used++] = rot13_char(buf[i]);
+            }
+            if(buf[i] == '\n')
+            {
+                //断言，捕捉代码异常，如果条件为假，则终止程序
+                assert(state->write_event);
+                event_add(state->write_event,NULL);
+                state->write_upto = state->buffer_used;
+            }
+        }
+    }
+
+    if(result == 0)
+        free_fd_state(state);
+    else if(result < 0)
+    {
+        if(errno == EAGAIN)
+            return;
+        perror("recv");
+        free_fd_state(state);
+    }
+}
+
+void do_write(evutil_socket_t fd, short events, void *arg)
+{
+    struct fd_state *state =  arg;
+
+    while(state->n_written < state->write_upto)
+    {
+        ssize_t result = send(fd, state->buffer + state->n_written,
+        state->write_upto - state->n_written,0);
+        if(result < 0)
+        {
+            if(errno == EAGAIN)
+                return;
+            free_fd_state(state);
+            return;
+        }
+        assert(result != 0);
+        state->n_written  += result;
+    }
+    if(state->n_written == state->buffer_used)
+        state->n_written = state->buffer_used = state->write_upto = 1;
+    event_del(state->write_event);
+}
+
+
+void do_accept(evutil_socket_t listener,short event, void *arg)
+{
+    struct event_base *base = arg;
+    struct sockaddr_storage ss;
+    socklen_t s_len = sizeof(ss);
+    int fd = accept(listener,(struct sockaddr*)&ss,&s_len);
+    if(fd < 0) /*XXX eagain*/
+    {
+        perror("accept");
+    }else if(fd > FD_SETSIZE)
+    {
+        close(fd);
+    }
+    else{
+        struct fd_state *state;
+        evutil_make_socket_nonblocking(fd);
+        state = alloc_fd_state(base,fd);
+        assert(state);
+        assert(state->write_event);
+        event_add(state->read_event,NULL);
+    }
+}
+
+void run(void)
+{
+    evutil_socket_t listener;
+    struct sockaddr_in sin;
+    struct evnet_base *base;
+    struct evnet      *listener_event;
+
+    base = event_base_new();
+    if(!base)
+    {
+        return;   /*err*/
+    }
+
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = 0;
+    sin.sin_port = htons(40713);
+
+    listener = socket(AF_INET,SOCK_STREAM,0);
+    evutil_make_socket_nonblocking(listener);
+#ifndef WIN32
+    int one = 1;
+    setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));
+#endif
+    if(bind(listener,(struct sockaddr*)&sin,sizeof(sin)) < 0)
+    {
+        perror("bind");
+        return;
+    }
+
+    if(listen(listener,16) < 0)
+    {
+        perror("listen");
+        return ;
+    }
+
+    listener_event = event_new(base,listener,EV_READ|EV_PERSIST,do_accept,(void*)base);
+    /*XXX checkt it*/
+    event_add(listener_event,NULL);
+    event_base_dispatch(base);
+}
+
+
+
+
+int main(int argc,char **argv)
+{
+    setvbuf(stdout,NULL,_IONBF,0);
+    run();
+    return 0;
+}
+
+
+
+```
+
+(代码中需要注意的地方：sockets的定义我们使用evutil_socket_t类型来代替int类型，我们调用evutil_make_socket_nonblocking替代fcntl(O_NONBLOCK)来设置socket为非阻塞模式,这些改变使得我们的代码能够更好地兼容Win32网络API)
+
+
+### 怎样才能更方便（在Windows下怎么工作？）
+
+你可能也注意到了，当我们的代码更高效的同时，也更复杂了.回溯到我们还在使用forking方式的时候， 我们不需要为每个连接管理buffer,对于每个进程，我们有独自的栈分配的缓存。我们也无需显式地追踪那个socket可写或可读。这些都是自动隐含在我们代码中的。我们也不需要一个结构体去追踪每个操作有多少完成了，我们仅仅使用循环和栈变量就够了。
+除此之外，如果你对windows网络编程非常有经验。你就会意识到，使用上面的例子，Libevent并不能得到最优的性能。在Windows上，你使用快速的IO异步端口并不是通过select()这样的接口，而是通过使用IOCP(IO完成端口)API，.与其他快速的网络API不同,当socket为操作准备好的时候,程序在即将执行操作之前IOCP是不会通知的.相反,程序会告诉Windows网络栈开始网络操作,IOCP会通知程序操作完成.
+
+幸运的是,LibEvent2的bufferevents接口解决了这两个问题:首先使程序更加简单,其次提供了在Windows和Linux上高效运行的接口.  
+下面是最终版本的ROT13服务器，使用了bufferevents API
+
+### 例子：使用Libevent的更简单的ROT13服务器
+
+```C
+//for sockaddr_in
+#include <netinet/in.h>
+
+/*for socket functions*/
+#include <sys/socket.h>
+/*for fcntl*/
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+
+#include <assert.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <errno.h>
+
+#define MAXLINE 16384 
+
+void do_read(evutil_socket_t fd, short events, void *arg);
+void do_write(evutil_socket_t fd, short events, void *arg);
+
+char rot13_char(char c)
+{
+    if((c >= 'a' && c <= 'm') || (c >= 'A' && c <= 'M'))
+        return c + 13;
+    else if ((c >= 'n' && c <= 'z') || (c >= 'N' && c <= 'Z'))
+        return c - 13;
+    else
+        return c;
+}
+
+void readcb(struct bufferevent *bev, void *ctx)
+{
+    struct evbuffer *input, *output;
+    char *line;
+    size_t n;
+    int i;
+    input = bufferevent_get_input(bev);
+    output = bufferevent_get_output(bev);
+
+    while((line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF)))
+    {
+        for(i = 0; i < n ; ++i)
+        {
+            line[i] = rot13_char(line[i]);
+        }
+        evbuffer_add(output,line,n);
+        evbuffer_add(output,"\n",1);
+        free(line);
+    }
+    if(evbuffer_get_length(input) >= MAXLINE)
+    {
+        /*Too long; just process what there is and go on so that the buffer
+         *doesn't grow infinitely long*/
+        char buf[1024];
+        while(evbuffer_get_length(input))
+        {
+            int n = evbuffer_remove(input,buf,sizeof(buf));
+            for(i = 0; i < n; ++i)
+            {
+                buf[i] = rot13_char(buf[i]);
+            }
+            evbuffer_add(output,buf,n);
+        }
+        evbuffer_add(output,'\n',1);
+    }
+}
+
+void errorcb(struct bufferevent *bev, short error, void *ctx)
+{
+    bufferevent_free(bev);
+}
+
+void do_accept(evutil_socket_t listener, short event, void *arg)
+{
+        struct event_base *base = arg;
+        struct sockaddr_storage ss;
+        socklen_t slen = sizeof(ss);
+        int fd = accept(listener,(struct sockaddr*)&ss,&slen);
+        if(fd < 0)
+        {
+            perror("accept");
+        }else if (fd > FD_SETSIZE)
+        {
+            close(fd);
+        }else 
+        {
+            struct bufferevent *bev;
+            evutil_make_socket_nonblocking(fd);
+            bev = bufferevent_socket_new(base,fd,BEV_OPT_CLOSE_ON_FREE);
+            bufferevent_setcb(bev,readcb,NULL,errorcb,NULL);
+            bufferevent_setwatermark(bev,EV_READ,0,MAXLINE);
+            bufferevent_enable(bev,EV_READ|EV_WRITE);
+        }
+}
+
+void run(void)
+{
+    evutil_socket_t listener;
+    struct sockaddr_in  sin;
+    struct event_base *base;
+    struct event *listener_event;
+
+    base = event_base_new();
+    if(!base)
+        return;
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = 0;
+    sin.sin_port = htons(40713);
+
+    listener = socket(AF_INET,SOCK_STREAM,0);
+    evutil_make_socket_nonblocking(listener);
+#ifndef WIN32
+{
+    int one = 1;
+    setsockopt(listener,SOL_SOCKET,SO_REUSEADDR,&one,sizeof(one));
+}
+#endif
+    if(bind(listener,(struct sockaddr*)&sin,sizeof(sin)) < 0)
+    {
+        perror("bind");
+        return;
+    }
+    if(listen(listener,16) < 0)
+    {
+        perror("listen");
+        return;
+    }
+    listener_event = event_new(base,listener,EV_READ|EV_PERSIST,do_accept,(void*)base);
+    /*XXX check it*/
+    event_add(listener_event,NULL);
+
+    event_base_dispatch(base);
+}
+
+int main(int argc, char **argv)
+{
+    setvbuf(stdout,NULL,_IONBF,0);
+    run();
+    return 0;
+}
+``` 
+### 这一切效率如何,当真？
+在这里写了一个高效的代码.libevent页面上的基准是过时了
+
+这些文件是版权(c)2009 - 2012年由尼克·马修森和可用创意下议院Attribution-Noncommercial-Share都许可,3.0版.未来版本
+
+可能会用更少的限制性许可协议.
+
+此外,这些文档的源代码示例都是基于"3条款"或"修改的"BSD许可,请参考license_bsd文件全部条款.
+
+本文档的最新版本,请参阅[Libevent官网](http://libevent.org/)
+
+本文档对应的最新版本代码,请安装git然后执行【git clone git://github.com/nmathewson/libevent-book.git】
