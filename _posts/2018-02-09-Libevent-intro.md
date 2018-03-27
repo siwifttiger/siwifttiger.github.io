@@ -23,13 +23,22 @@ tags:
 >第一次握手：建立连接时，客户机发送SYN包到服务器(syn = j)，进入SYN_SENT状态，等待服务器确认  
 >第二次握手：服务器收到客户机发来的SYN包，必须确认客户的SYN(ack = j + 1),同时自己也发送一个SYN(syn = i)包，以及一个ACK包。此时服务器进入SYN_RECV状态  
 >第三次握手：客户机收到服务器发送的SYN+ACK包，向服务器发送ACK(ack=i+1)包，此包发送完毕，客户机进入ESTABLISH，服务器收到ACK包，也会进入ESTABLISH状态，此时TCP连接建立成功.  
->　　　　　　　　　　　　CLIENT　　　　　　　　　　SERVER  
->　　　　　　　SYN_SENT　　|　　　　　　　　　　　　|　　LISTEN  
->　　　　　　　　　　　　　|　　　　　　　　　　　　|  
->　　　　　　　　　　　　　|　　　　　　　　　　　　|    SYN_RECV  
->　　　　　　　　　　　　　|　　　　　　　　　　　　|  
->　　　　　　ESTABLISH　　　|　　　　　　　　　　　　|  
->　　　　　　　　　　　　　|　　　　　　　　　　　　|　　ESTABLISH  
+
+```sequence
+
+participant  CLIENT
+participant  SERVER
+
+note left of CLIENT : SYN_SENT
+note right of SERVER: LISTEN
+CLIENT->SERVER:SYN_SENT(SYN=1,seq=client_isn)
+SERVER->CLIENT:SYN_RECV(SYN=1,seq=server_isn)  \n  ack=client_isn+1
+note right of SERVER:SYN_RECV
+CLIENT->SERVER:ESTABLISH(SYN=0,seq=client_isn+1) \n ack=server_isn+1
+note left of CLIENT: ESTABLISH
+note right of SERVER:ESTABLISH
+
+```
 
 下面是一个使用阻塞网络调用的简单的例子。它向 www.baidu.com(原文是www.google.com)打开一个连接，发送一个简单的HTTP请求，然后将response打印到标准输出(stdout)。
 ### 例子: 一个简单的阻塞HTTP client　
